@@ -71,3 +71,7 @@ hpack_static_table = (
     ("via", ""),
     ("www-authenticat", ""),
 )
+
+
+class HTTP2HpackTable:
+    pass
