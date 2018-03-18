@@ -4,7 +4,7 @@
 http/2 protocol frame implements
 """
 
-from .compat import is_py2, is_py3
+from .compat import is_py2, is_py3, empty_object
 from .exceptions import HTTP2FrameError
 
 from array import array
@@ -110,9 +110,6 @@ class HTTP2FrameHeader(object):
     |               Frame Payload (0...)          ...
     +-----------------------------------------------+
 
-    This class should not be used from user code, instead, it is designed only
-    for inheritence.
-
     :param _type: the frame type, e.g. a PUSH_PROMISE frame.
     :param _length: the PAYLOAD length for this frame.
     :param _sid: the stream identifier where this frame belongs.
@@ -190,18 +187,13 @@ class HTTP2FrameHeader(object):
     @staticmethod
     def check_frame_type(_type):
         """Checks validity for the frame type."""
-        if not isinstance(_type, int):
-            raise ValueError("frame type should be an integer.")
-        elif _type < HTTP_V2_DATA_FRAME or _type > HTTP_V2_CONTINUATION_FRAME:
+        if _type < HTTP_V2_DATA_FRAME or _type > HTTP_V2_CONTINUATION_FRAME:
             raise HTTP2FrameError("invalid frame type 0x%x." % _type)
 
     @staticmethod
     def check_frame_length(_length):
         """Checks validity for the frame length."""
-        if not isinstance(_type, int):
-        if not isinstance(_length, int):
-            raise ValueError("frame length should be an integer.")
-        elif _length < 0 or _length > HTTP_V2_MAX_FRAME_SIZE:
+        if _length < 0 or _length > HTTP_V2_MAX_FRAME_SIZE:
             raise HTTP2FrameError("invalid frame length %d." % _length)
 
     @staticmethod
@@ -209,27 +201,22 @@ class HTTP2FrameHeader(object):
         """Checks validity for the stream identifier where the frame belongs.
         Note the parity is not checked.
         """
-        if not isinstance(_sid, int):
-            raise ValueError("frame stream identifier should be a integer.")
-        elif _sid < 0 or _sid > HTTP_V2_STREAM_ID_MASK:
+        if _sid < 0 or _sid > HTTP_V2_STREAM_ID_MASK:
             raise HTTP2FrameError("invalid frame stream identifier: %d." % _sid)
 
     @staticmethod
     def check_frame_flags(_flags):
         """Checks validity for the frame flags."""
-        if not isinstance(_flags, int):
-            raise ValueError("frame flags should be a integer.")
-
-        mimic = 0
+        dummy = 0
         for flag in HTTP_V2_FRAME_FLAG_NAME:
             if _flags & flag == flag:
-                mimic |= flag
+                dummy |= flag
 
-        if mimic != _flags:
+        if dummy != _flags:
             raise HTTP2FrameError("invalid frame flags: 0x%x." % flags)
 
 
-class HTTP2HeadersFrame(HTTP2FrameHeader):
+class HTTP2HeadersFrame(object):
     """The HTTP/2 Headers frame class
 
     +-----------------+
@@ -248,6 +235,76 @@ class HTTP2HeadersFrame(HTTP2FrameHeader):
     :param path: the path and query parts of the target URI.
     :param method: the HTTP method.
     :param headers: a dict represents the request headers.
+    :param sid: the stream identifier where the frame belongs.
+    :param flags: the frame flags.
     """
-    def __init__(self, authority, path, method, sid, headers, flags=None):
+    def __init__(self, authority, path, method, headers, sid, flags=0):
+        # the frame header
+        self.__header = None
+
+        self.header_block = dict((key.lower(), headers[key]) for key in headers)
+
+        # pseudo-headers
+        self.header_block[":authority"] = authority
+        self.header_block[":method"] = method
+        self.header_block[":path"] = path
+
+    def serialize(self):
         pass
+
+
+class HTTP2DataFrame(object):
+    """The HTTP/2 Data frame class
+
+    +---------------+
+    |Pad Length? (8)|
+    +---------------+-----------------------------------------------+
+    |                           Data (*)                          ...
+    +---------------------------------------------------------------+
+    |                           Padding (*)                       ...
+    +---------------------------------------------------------------+
+
+    :param data: the body data.
+    :param sid: the stream identifier where the frame belongs.
+    :param pad_length: the padding data.
+    :param flags: the frame flags.
+    """
+    def __init__(self, _data, _sid, _pad=None, _flags=0):
+        self.__header = None
+        self.__data = _data
+        self.__sid = _sid
+        self.__type = HTTP_V2_DATA_FRAME
+        self.__pad = _pad
+        self.__flags = _flags
+
+    def serialize(self):
+        """Serializes the Data frame."""
+        if self.__header is None:
+            length = len(self.data) + 1 if self.__pad is not None else 0
+
+            flags = self.__flags
+            if self.__pad is not None:
+                flags |= HTTP_V2_PADDED_FLAG
+
+            self.__header = HTTP2FrameHeader(self.__type, length, self.__sid,
+                                             flags)
+
+        header = self.__header.serialize()
+
+        data = empty_object
+        if self.__pad is not None:
+            data = pack("B", len(self.__pad))
+
+        return empty_object.join([data, self.__data, self.__pad])
+
+    @staticmethod
+    def parse_data_frame(self, header, payload):
+        if header.type != HTTP_V2_DATA_FRAME:
+            raise HTTP2FrameError("invalid frame type: %s" %
+                HTTP2FrameHeader.get_frame_name(header.type))
+
+        pad_length = 0
+        if header.has_flag(HTTP_V2_PADDED_FLAG):
+            pad_length, payload = payload[0], payload[1:]
+
+        data = payload[]
