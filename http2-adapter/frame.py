@@ -70,6 +70,14 @@ HTTP_V2_END_HEADERS_FLAG = 0x04
 HTTP_V2_PADDED_FLAG      = 0x08
 HTTP_V2_PRIORITY_FLAG    = 0x20
 
+# settings params
+HTTP_V2_SETTINGS_HEADER_TABLE_SIZE      = 0x1
+HTTP_V2_SETTINGS_ENABLE_PUSH            = 0x2
+HTTP_V2_SETTINGS_MAX_CONCURRENT_STREAMS = 0x3
+HTTP_V2_SETTINGS_INITIAL_WINDOW_SIZE    = 0x4
+HTTP_V2_SETTINGS_MAX_FRAME_SIZE         = 0x5
+HTTP_V2_SETTINGS_MAX_HEADER_LIST_SIZE   = 0x6
+
 HTTP_V2_STREAM_ID_MASK = 0x7fffffff
 
 HTTP_V2_MAX_FRAME_SIZE = (1 << 24) - 1
@@ -78,25 +86,25 @@ HTTP_V2_MAX_WINDOW     = (1 << 31) - 1
 HTTP_V2_DEFAULT_WINDOW = 65535
 
 HTTP_V2_FRAME_TYPE_NAME = {
-    HTTP_V2_DATA_FRAME: "DATA",
-    HTTP_V2_HEADERS_FRAME: "HEADERS",
-    HTTP_V2_PRIORITY_FRAME: "PRIORITY",
-    HTTP_V2_RST_STREAM_FRAME: "RST_STREAM",
-    HTTP_V2_SETTINGS_FRAME: "SETTINGS",
-    HTTP_V2_PUSH_PROMISE_FRAME: "PUSH_PROMISE",
-    HTTP_V2_PING_FRAME: "PING",
-    HTTP_V2_GOAWAY_FRAME: "GOAWAY",
-    HTTP_V2_WINDOW_UPDATE_FRAME: "WINDOW_UPDATE",
-    HTTP_V2_CONTINUATION_FRAME: "CONTINUATION",
+    HTTP_V2_DATA_FRAME          : "DATA",
+    HTTP_V2_HEADERS_FRAME       : "HEADERS",
+    HTTP_V2_PRIORITY_FRAME      : "PRIORITY",
+    HTTP_V2_RST_STREAM_FRAME    : "RST_STREAM",
+    HTTP_V2_SETTINGS_FRAME      : "SETTINGS",
+    HTTP_V2_PUSH_PROMISE_FRAME  : "PUSH_PROMISE",
+    HTTP_V2_PING_FRAME          : "PING",
+    HTTP_V2_GOAWAY_FRAME        : "GOAWAY",
+    HTTP_V2_WINDOW_UPDATE_FRAME : "WINDOW_UPDATE",
+    HTTP_V2_CONTINUATION_FRAME  : "CONTINUATION",
 }
 
 HTTP_V2_FRAME_FLAG_NAME = {
-    HTTP_V2_NO_FLAG: "NO_FLAG",
-    HTTP_V2_ACK_FLAG: "ACK",
-    HTTP_V2_END_STREAM_FLAG: "END_STREAM",
-    HTTP_V2_END_HEADERS_FLAG: "END_HEADERS",
-    HTTP_V2_PADDED_FLAG: "PADDED",
-    HTTP_V2_PRIORITY_FLAG: "PRIORITY",
+    HTTP_V2_NO_FLAG          : "NO_FLAG",
+    HTTP_V2_ACK_FLAG         : "ACK",
+    HTTP_V2_END_STREAM_FLAG  : "END_STREAM",
+    HTTP_V2_END_HEADERS_FLAG : "END_HEADERS",
+    HTTP_V2_PADDED_FLAG      : "PADDED",
+    HTTP_V2_PRIORITY_FLAG    : "PRIORITY",
 }
 
 
@@ -453,3 +461,77 @@ class HTTP2RSTStreamFrame(object):
 
         code = unpack(">I", payload)
         return HTTP2RSTStreamFrame(header, code)
+
+
+class HTTP2SettingsFrame(object):
+    """The HTTP/2 SETTINGS class
+
+    +-------------------------------+
+    |        Identifier (16)        |
+    +-------------------------------+-------------------------------+
+    |                           Value (32)                          |
+    +---------------------------------------------------------------+
+
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _settings: a list of setting items, each item is a tuple.
+    """
+    def __init__(self, _header, _settings=[]):
+        HTTP2FrameHeader.check_frame_type(_header.type,
+                                          need=HTTP_V2_SETTINGS_FRAME)
+        if _header.stream_id != 0x0:
+            raise HTTP2FrameError("SETTINGS frame with the inproper "
+                                  "stream identifier: %d" % _header.stream_id)
+        elif _header.has_flag(HTTP_V2_ACK_FLAG) and _header.length > 0:
+            # FIXME we should distinguish these exceptions
+            raise HTTP2FrameError("SETTINGS frame with ACK flag "
+                                  "and non-zero length")
+        elif _header.length != len(_settings) * HTTP_V2_SETTINGS_PARAM_SIZE:
+            raise HTTP2FrameError("SETTINGS frame with "
+                                  "incorrect length: %d" % _header.length)
+
+        for key, value in _settings:
+            if key < SETTINGS_MAX_HEADER_LIST_SIZE or
+               key > HTTP_V2_SETTINGS_MAX_HEADER_LIST_SIZE:
+                raise HTTP2FrameError("unknown setting param id: 0x%x" % key)
+            elif value < 0 or value > (1 << 32) - 1:
+                raise HTTP2FrameError("invalid setting param value: 0x%x" % key)
+
+        self__header = _header
+        self.__settings = _settings
+
+    def __repr__(self):
+        return "<HTTP/2 SETTINGS frame>"
+
+    def serialize(self):
+        """Serializes the SETTINGS frame.
+
+        :rtype: the data stream.
+        """
+        items = [self.__header.serialize()]
+        for key, value in self.__settings:
+            items.append(pack(">HI", key, value))
+        return empty_object.join(items)
+
+    @staticmethod
+    def parse_data_frame(header, payload):
+        """Parses the SETTINGS frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2RSTStreamFrame`.
+        """
+        HTTP2FrameHeader.check_frame_type(header.type,
+                                          need=HTTP_V2_RST_STREAM_FRAME)
+        if header.length % HTTP_V2_SETTINGS_FRAME != 0:
+            raise HTTP2FrameError("invalid frame length: %d" % header.length)
+        elif header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+
+        settings = []
+        for i in range(0, header.length, HTTP_V2_SETTINGS_FRAME):
+            piece = payload[i:i+HTTP_V2_SETTINGS_PARAM_SIZE])
+            param_id, param_value = unpack(">BI", piece)
+            settings.append((param_id, param_value))
+
+        return HTTP2SettingsFrame(header, settings)
