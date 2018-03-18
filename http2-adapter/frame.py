@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 
 """
-http/2 protocol frame implements
+http/2 protocol frames implements
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This module implements all the frames defined in HTTP/2 protocol.
 """
 
 from .compat import is_py2, is_py3, empty_object
@@ -168,7 +171,7 @@ class HTTP2FrameHeader(object):
     def parse_frame_header(data):
         """Parses the data and builds a frame header.
         :param data: str/bytes data pends to parse. 
-        :rtype: a instances of :class: `HTTP2FrameHeader`.
+        :rtype: a instance of :class: `HTTP2FrameHeader`.
 
         for python/2.x, data shall be a str object,
         where as for python/3.x, data shall be a bytes object.
@@ -264,47 +267,59 @@ class HTTP2DataFrame(object):
     |                           Padding (*)                       ...
     +---------------------------------------------------------------+
 
-    :param data: the body data.
-    :param sid: the stream identifier where the frame belongs.
-    :param pad_length: the padding data.
-    :param flags: the frame flags.
+    :param header: a instance of :class: `HTTP2FrameHeader`.
+    :param _data: the body data.
+    :param _pad: the padding data.
     """
-    def __init__(self, _data, _sid, _pad=None, _flags=0):
-        self.__header = None
+    def __init__(self, _header, _data, _pad=None):
+        pad_flag = _header.has_flag(HTTP_V2_PADDED_FLAG)
+        if pad_flag and _pad is None:
+            raise HTTP2FrameError("PADDED frame without padding data")
+        elif not pad_flag and _pad is not None:
+            raise HTTP2FrameError("Non PADDED frame with padding data")
+
+        self.__header = _header
         self.__data = _data
-        self.__sid = _sid
-        self.__type = HTTP_V2_DATA_FRAME
         self.__pad = _pad
-        self.__flags = _flags
 
     def serialize(self):
         """Serializes the Data frame."""
-        if self.__header is None:
-            length = len(self.data) + 1 if self.__pad is not None else 0
-
-            flags = self.__flags
-            if self.__pad is not None:
-                flags |= HTTP_V2_PADDED_FLAG
-
-            self.__header = HTTP2FrameHeader(self.__type, length, self.__sid,
-                                             flags)
-
         header = self.__header.serialize()
 
         data = empty_object
-        if self.__pad is not None:
+        if self.__header.has_flag(HTTP_V2_PADDED_FLAG) is not None:
             data = pack("B", len(self.__pad))
 
         return empty_object.join([data, self.__data, self.__pad])
 
     @staticmethod
     def parse_data_frame(self, header, payload):
+        """Parses the DATA frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2DataFrame`.
+        """
         if header.type != HTTP_V2_DATA_FRAME:
             raise HTTP2FrameError("invalid frame type: %s" %
                 HTTP2FrameHeader.get_frame_name(header.type))
 
         pad_length = 0
         if header.has_flag(HTTP_V2_PADDED_FLAG):
+            if len(header.length) == 0:
+                raise HTTP2FrameError("PADDED DATA frame "
+                                      "with incorrect length: 0")
+
             pad_length, payload = payload[0], payload[1:]
 
-        data = payload[]
+        if pad_length >= header.length:
+            raise HTTP2FrameError("DATA frame with incorrect length: %d "
+                                  "padding: %d" % (header.length, pad_length))
+
+        data_length = header.length - pad_length
+        if pad_length == 0:
+            return HTTP2DataFrame(header, payload)
+        else:
+            return HTTP2DataFrame(header, payload[:data_length],
+                                  Payload[data_length:])
