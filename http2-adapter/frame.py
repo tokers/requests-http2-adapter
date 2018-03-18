@@ -205,7 +205,7 @@ class HTTP2FrameHeader(object):
             raise HTTP2FrameError("invalid frame length %d." % _length)
 
     @staticmethod
-    def check_frame_sid(_sid, client=True):
+    def check_frame_sid(_sid):
         """Checks validity for the stream identifier where the frame belongs.
         Note the parity is not checked.
         """
@@ -292,7 +292,10 @@ class HTTP2DataFrame(object):
         return "<HTTP/2 DATA frame>"
 
     def serialize(self):
-        """Serializes the DATA frame."""
+        """Serializes the DATA frame.
+
+        :rtype: the data stream.
+        """
         header = self.__header.serialize()
         data = empty_object
         if self.__header.has_flag(HTTP_V2_PADDED_FLAG) is not None:
@@ -342,10 +345,10 @@ class HTTP2PriorityFrame(object):
     |   Weight (8)  |
     +-+-------------+
 
-    :param header: a instance of :class: `HTTP2FrameHeader`.
-    :param depend: the dependency stream identifier.
-    :param weight: the corresponding stream weight.
-    :param excl: whether the stream dependency is exclusive.
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _depend: the dependency stream identifier.
+    :param _weight: the corresponding stream weight.
+    :param _excl: whether the stream dependency is exclusive.
     """
     def __init__(self, _header, depend, weight, excl=False):
         HTTP2FrameHeader.check_frame_type(_header.type, HTTP_V2_PRIORITY_FRAME)
@@ -367,7 +370,10 @@ class HTTP2PriorityFrame(object):
         return "<HTTP/2 PRIORITY frame>"
 
     def serialize(self):
-        """Serializes the PRIORITY frame."""
+        """Serializes the PRIORITY frame.
+
+        :rtype: the data stream.
+        """
         header = self.__header.serialize()
         depend = self.__depend
         if self.__excl:
@@ -393,3 +399,57 @@ class HTTP2PriorityFrame(object):
         depend, weight = unpack(">IB", payload)
         excl = True if depend & (1 << 32) else False
         return HTTP2PriorityFrame(header, depend, weight, excl)
+
+
+class HTTP2RSTStreamFrame(object):
+    """The HTTP/2 RST_STREAM class
+
+    +---------------------------------------------------------------+
+    |                           Error Code (32)                     |
+    +---------------------------------------------------------------+
+
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _code: the specific error code.
+    """
+    def __init__(self, _header, _code):
+        HTTP2FrameHeader.check_frame_type(_header.type, need=HTTP_V2_PRIORITY_FRAME)
+        if _header.stream_id == 0x0:
+            raise HTTP2FrameError("RST_STREAM frame with "
+                                  "the 0x0 stream identifier")
+
+        if _code < HTTP_V2_NO_ERROR or _code > HTTP_V2_HTTP_1_1_REQUIRED:
+            raise HTTP2FrameError("invalid error code 0x%x" % _code)
+
+        self__header = _header
+        self.__code = _code
+
+    def __repr__(self):
+        return "<HTTP/2 RST_STREAM frame>"
+
+    def serialize(self):
+        """Serializes the PRIORITY frame.
+
+        :rtype: the data stream.
+        """
+        header = self.__header.serialize()
+        code = pack(">I", self.__code)
+        return empty_object.join([header, code])
+
+    @staticmethod
+    def parse_data_frame(header, payload):
+        """Parses the RST_STREAM frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2RSTStreamFrame`.
+        """
+        HTTP2FrameHeader.check_frame_type(header.type,
+                                          need=HTTP_V2_RST_STREAM_FRAME)
+        if header.length != HTTP_V2_RST_STREAM_SIZE:
+            raise HTTP2FrameError("invalid frame length: %d" % header.length)
+        elif header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+
+        code = unpack(">I", payload)
+        return HTTP2RSTStreamFrame(header, code)
