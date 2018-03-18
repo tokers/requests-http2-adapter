@@ -123,7 +123,6 @@ class HTTP2FrameHeader(object):
         HTTP2FrameHeader.check_frame_length(_length)
         HTTP2FrameHeader.check_frame_sid(_sid)
         HTTP2FrameHeader.check_frame_flags(_flags)
-
         self.__type = _type
         self.__length = _length
         self.__sid = _sid
@@ -135,12 +134,13 @@ class HTTP2FrameHeader(object):
 
     def serialize(self):
         """Serializes the frame header
-        "rtype: string for python/2.x whereas bytes for python/3.x"
+        rtype: string for python/2.x whereas bytes for python/3.x.
         """
         length_type = self.__length << 8 | self.__type
         return pack(">IBI", length_type, self.__flags, self.__sid)
 
     def has_flag(self, flag):
+        """Checks the specific flag."""
         return self.__flag & flag == flag
 
     @property
@@ -165,6 +165,7 @@ class HTTP2FrameHeader(object):
 
     @staticmethod
     def get_frame_type_name(_type):
+        """Returns the corresponding frame type name."""
         return HTTP_V2_FRAME_TYPE_NAME.get(_type, "UNKNOWN")
 
     @staticmethod
@@ -188,10 +189,14 @@ class HTTP2FrameHeader(object):
         return HTTP2FrameHeader(*unpack(">IBI", data))
 
     @staticmethod
-    def check_frame_type(_type):
+    def check_frame_type(_type, need=None):
         """Checks validity for the frame type."""
         if _type < HTTP_V2_DATA_FRAME or _type > HTTP_V2_CONTINUATION_FRAME:
             raise HTTP2FrameError("invalid frame type 0x%x." % _type)
+
+        if need is not None and _type != need:
+            type_name = HTTP2FrameHeader.get_frame_type_name(_type)
+            raise HTTP2FrameError("unexpected frame type \"%s\"" % type_name)
 
     @staticmethod
     def check_frame_length(_length):
@@ -220,7 +225,7 @@ class HTTP2FrameHeader(object):
 
 
 class HTTP2HeadersFrame(object):
-    """The HTTP/2 Headers frame class
+    """The HTTP/2 Headers frame class.
 
     +-----------------+
     | Pad Length? (8) |
@@ -257,7 +262,7 @@ class HTTP2HeadersFrame(object):
 
 
 class HTTP2DataFrame(object):
-    """The HTTP/2 Data frame class
+    """The HTTP/2 DATA frame class
 
     +---------------+
     |Pad Length? (8)|
@@ -272,6 +277,7 @@ class HTTP2DataFrame(object):
     :param _pad: the padding data.
     """
     def __init__(self, _header, _data, _pad=None):
+        HTTP2FrameHeader.check_frame_type(_header.type, HTTP_V2_DATA_FRAME)
         pad_flag = _header.has_flag(HTTP_V2_PADDED_FLAG)
         if pad_flag and _pad is None:
             raise HTTP2FrameError("PADDED frame without padding data")
@@ -282,18 +288,20 @@ class HTTP2DataFrame(object):
         self.__data = _data
         self.__pad = _pad
 
-    def serialize(self):
-        """Serializes the Data frame."""
-        header = self.__header.serialize()
+    def __repr__(self):
+        return "<HTTP/2 DATA frame>"
 
+    def serialize(self):
+        """Serializes the DATA frame."""
+        header = self.__header.serialize()
         data = empty_object
         if self.__header.has_flag(HTTP_V2_PADDED_FLAG) is not None:
-            data = pack("B", len(self.__pad))
+            data = pack(">B", len(self.__pad))
 
         return empty_object.join([data, self.__data, self.__pad])
 
     @staticmethod
-    def parse_data_frame(self, header, payload):
+    def parse_data_frame(header, payload):
         """Parses the DATA frame.
         Caller should assure that the payload size is equal to header.length.
 
@@ -304,13 +312,14 @@ class HTTP2DataFrame(object):
         if header.type != HTTP_V2_DATA_FRAME:
             raise HTTP2FrameError("invalid frame type: %s" %
                 HTTP2FrameHeader.get_frame_name(header.type))
+        elif header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % header.length)
 
         pad_length = 0
         if header.has_flag(HTTP_V2_PADDED_FLAG):
-            if len(header.length) == 0:
+            if header.length == 0:
                 raise HTTP2FrameError("PADDED DATA frame "
                                       "with incorrect length: 0")
-
             pad_length, payload = payload[0], payload[1:]
 
         if pad_length >= header.length:
@@ -322,4 +331,65 @@ class HTTP2DataFrame(object):
             return HTTP2DataFrame(header, payload)
         else:
             return HTTP2DataFrame(header, payload[:data_length],
-                                  Payload[data_length:])
+                                  payload[data_length:])
+
+class HTTP2PriorityFrame(object):
+    """The HTTP/2 PRIORITY frame class
+
+    +-+-------------------------------------------------------------+
+    |E|                   Stream Dependency (31)                    |
+    +-+-------------+-----------------------------------------------+
+    |   Weight (8)  |
+    +-+-------------+
+
+    :param header: a instance of :class: `HTTP2FrameHeader`.
+    :param depend: the dependency stream identifier.
+    :param weight: the corresponding stream weight.
+    :param excl: whether the stream dependency is exclusive.
+    """
+    def __init__(self, _header, depend, weight, excl=False):
+        HTTP2FrameHeader.check_frame_type(_header.type, HTTP_V2_PRIORITY_FRAME)
+        HTTP2FrameHeader.check_frame_sid(depend)
+        if _header.stream_id == 0x0:
+            raise HTTP2FrameError("PRIORITY frame cannot specify "
+                                  "the whole connection")
+        elif _header.stream_id == depend:
+            raise HTTP2FrameError("dependency stream cannot be itself")
+        elif weight < 1 or weight > 256:
+            raise HTTP2FrameError("invalid weight: %d" % weight)
+
+        self.__header = _header
+        self.__depend = depend
+        self.__weight = weight
+        self__excl = excl
+
+    def __repr__(self):
+        return "<HTTP/2 PRIORITY frame>"
+
+    def serialize(self):
+        """Serializes the PRIORITY frame."""
+        header = self.__header.serialize()
+        depend = self.__depend
+        if self.__excl:
+            depend |= 1 << 32
+        data = pack(">IB", depend, self.__weight)
+        return empty_object.join([header, data])
+
+    @staticmethod
+    def parse_data_frame(header, payload):
+        """Parses the PRIORITY frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2PriorityFrame`.
+        """
+        if header.type != HTTP_V2_PRIORITY_FRAME:
+            raise HTTP2FrameError("invalid frame type: %s" %
+                HTTP2FrameHeader.get_frame_type_name(header.type))
+        elif header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+
+        depend, weight = unpack(">IB", payload)
+        excl = True if depend & (1 << 32) else False
+        return HTTP2PriorityFrame(header, depend, weight, excl)
