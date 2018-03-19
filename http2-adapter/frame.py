@@ -604,3 +604,67 @@ class HTTP2PingFrame(object):
 
         opaque = unpack(">Q", payload)
         return HTTP2PingFrame(header, opaque)
+
+
+class HTTP2GoAwayFrame(object):
+    """The HTTP/2 GOAWAY frame class
+
+    +-+-------------------------------------------------------------+
+    |R|                     Last-Stream-ID (31)                     |
+    +-+-------------------------------------------------------------+
+    |                       Error Code (32)                         |
+    +---------------------------------------------------------------+
+    |                       Additional Debug Data (*)               |
+    +---------------------------------------------------------------+
+
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _last_stream_id: the identifier of the last peer-initialized stream.
+    :param _code: the error code.
+    :param _debug: additional debug data.
+    """
+    def __init__(self, _header, _last_stream_id, _code, _debug=empty_object):
+        HTTP2FrameHeader.check_frame_type(_header.type,
+                                          need=HTTP_V2_GOAWAY_FRAME)
+        HTTP2FrameHeader.check_frame_sid(_last_stream_id)
+        if _header.stream_id != 0x0:
+            raise HTTP2FrameError("SETTINGS frame with the inproper "
+                                  "stream identifier: %d" % _header.stream_id)
+
+        length = 4 + 4 + len(_debug)
+        if length != _header.length:
+            raise HTTP2FrameError("GOAWAY frame with "
+                                  "incorrect length: %d" % _header.length)
+
+        self.__header = _header
+        self.__last_sid = _last_stream_id & HTTP_V2_STREAM_ID_MASK
+        self.__code = _code
+        self.__debug = _debug
+
+    def __repr__(self):
+        return "<HTTP/2 GOAWAY frame>"
+
+    def serialize(self):
+        """Serializes the GOAWAY frame.
+
+        :rtype: the data frame.
+        """
+        header = self.__header.serialize()
+        data = pack(">II", self.__last_sid, self.__code)
+        return empty_object.join([header, data, self.__debug])
+
+    @staticmethod
+    def parse_frame(header, payload):
+        """Parses the GOAWAY frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2GoAwayFrame`.
+        """
+        HTTP2FrameHeader.check_frame_type(header.type,
+                                          need=HTTP_V2_GOAWAY_FRAME)
+        if header.length != len(payload):
+            rasie HTTP2FrameError("invalid payload length: %d" % len(payload))
+
+        last_sid, err_code, debug = unpack(">II", payload[:8]), payload[8:]
+        return HTTP2GoAwayFrame(header, last_sid, err_code, debug)
