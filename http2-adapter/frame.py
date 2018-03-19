@@ -312,7 +312,7 @@ class HTTP2DataFrame(object):
         return empty_object.join([data, self.__data, self.__pad])
 
     @staticmethod
-    def parse_data_frame(header, payload):
+    def parse_frame(header, payload):
         """Parses the DATA frame.
         Caller should assure that the payload size is equal to header.length.
 
@@ -390,7 +390,7 @@ class HTTP2PriorityFrame(object):
         return empty_object.join([header, data])
 
     @staticmethod
-    def parse_data_frame(header, payload):
+    def parse_frame(header, payload):
         """Parses the PRIORITY frame.
         Caller should assure that the payload size is equal to header.length.
 
@@ -444,7 +444,7 @@ class HTTP2RSTStreamFrame(object):
         return empty_object.join([header, code])
 
     @staticmethod
-    def parse_data_frame(header, payload):
+    def parse_frame(header, payload):
         """Parses the RST_STREAM frame.
         Caller should assure that the payload size is equal to header.length.
 
@@ -513,7 +513,7 @@ class HTTP2SettingsFrame(object):
         return empty_object.join(items)
 
     @staticmethod
-    def parse_data_frame(header, payload):
+    def parse_frame(header, payload):
         """Parses the SETTINGS frame.
         Caller should assure that the payload size is equal to header.length.
 
