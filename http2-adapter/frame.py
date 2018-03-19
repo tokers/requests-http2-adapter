@@ -402,7 +402,7 @@ class HTTP2PriorityFrame(object):
             raise HTTP2FrameError("invalid frame type: %s" %
                 HTTP2FrameHeader.get_frame_type_name(header.type))
         elif header.length != len(payload):
-            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
 
         depend, weight = unpack(">IB", payload)
         excl = True if depend & (1 << 32) else False
@@ -457,14 +457,14 @@ class HTTP2RSTStreamFrame(object):
         if header.length != HTTP_V2_RST_STREAM_SIZE:
             raise HTTP2FrameError("invalid frame length: %d" % header.length)
         elif header.length != len(payload):
-            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
 
         code = unpack(">I", payload)
         return HTTP2RSTStreamFrame(header, code)
 
 
 class HTTP2SettingsFrame(object):
-    """The HTTP/2 SETTINGS class
+    """The HTTP/2 SETTINGS frame class
 
     +-------------------------------+
     |        Identifier (16)        |
@@ -526,7 +526,7 @@ class HTTP2SettingsFrame(object):
         if header.length % HTTP_V2_SETTINGS_FRAME != 0:
             raise HTTP2FrameError("invalid frame length: %d" % header.length)
         elif header.length != len(payload):
-            raise HTTP2FrameError("invalid payload length: %d" % header.lenth)
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
 
         settings = []
         for i in range(0, header.length, HTTP_V2_SETTINGS_FRAME):
@@ -535,3 +535,72 @@ class HTTP2SettingsFrame(object):
             settings.append((param_id, param_value))
 
         return HTTP2SettingsFrame(header, settings)
+
+
+class HTTP2PushPromiseFrame(object):
+    """The HTTP/2 PUSH PROMISE frame class
+
+    +---------------+
+    |Pad Length? (8)|
+    +-+-------------+-----------------------------------------------+
+    |R|                 Promised Stream ID (31)                     |
+    +-+-----------------------------+-------------------------------+
+    |                  Header Block Fragment (*)                  ...
+    +---------------------------------------------------------------+
+    |                       Padding (*)                           ...
+    +---------------------------------------------------------------+
+
+    """
+    pass
+
+
+class HTTP2PingFrame(object):
+    """The HTTP/2 PING frame class
+
+    +---------------------------------------------------------------+
+    |                                                               |
+    |                       Opaque Data (64)                        |
+    |                                                               |
+    +---------------------------------------------------------------+
+
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _opaque: an 8 octets of opaque data in the payload.
+    """
+    def __init__(self, _header, _opaque=0):
+        HTTP2FrameHeader.check_frame_type(_header.type, need=HTTP_V2_PING_FRAME)
+        if _header.stream_id != 0x0:
+            raise HTTP2FrameError("PING frame with the inproper "
+                                  "stream identifier: %d" % _header.stream_id)
+
+        self.__header = _header
+        self.__opaque = _opaque
+
+    def __repr__(self):
+        return "<HTTP/2 PING frame>"
+
+    def serialize(self):
+        """Serializes the PING frame.
+
+        :rtype: the data frame.
+        """
+        header = self.__header.serialize()
+        opaque = pack(">Q", self.__opaque)
+        return empty_object.join([header, opaque])
+
+    @staticmethod
+    def parse_frame(header, payload):
+        """Parses the PING frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2PingFrame`.
+        """
+        HTTP2FrameHeader.check_frame_type(header.type, need=HTTP_V2_PING_FRAME)
+        if header.length != HTTP_V2_PING_SIZE:
+            raise HTTP2FrameError("invalid frame length: %d" % header.length)
+        elif header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
+
+        opaque = unpack(">Q", payload)
+        return HTTP2PingFrame(header, opaque)
