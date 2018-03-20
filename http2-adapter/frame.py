@@ -664,7 +664,58 @@ class HTTP2GoAwayFrame(object):
         HTTP2FrameHeader.check_frame_type(header.type,
                                           need=HTTP_V2_GOAWAY_FRAME)
         if header.length != len(payload):
-            rasie HTTP2FrameError("invalid payload length: %d" % len(payload))
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
 
         last_sid, err_code, debug = unpack(">II", payload[:8]), payload[8:]
         return HTTP2GoAwayFrame(header, last_sid, err_code, debug)
+
+
+class HTTP2WindowUpdateFrame(object):
+    """The HTTP/2 WINDOW_UPDATE frame class
+
+    +-+-------------------------------------------------------------+
+    |R|                  Window Size Increment (31)                 |
+    +-+-------------------------------------------------------------+
+
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _incr: the window size increment.
+    """
+    def __init__(self, _header, _incr):
+        HTTP2FrameHeader.check_frame_type(_header.type,
+                                          need=HTTP_V2_WINDOW_UPDATE_FRAME)
+        if _inrc == 0x0:
+            raise HTTP2FrameError("WINDOW_UPDATE frame with 0 increment")
+
+        self.__header = _header
+        self.__incr = _incr & 0x7fffffff
+
+    def __repr__(self):
+        return "<HTTP/2 WINDOW_UPDATE frame>"
+
+    def serialize(self):
+        """Serializes the WINDOW_UPDATE frame.
+
+        :rtype: the data frame.
+        """
+        header = self.__header.serialize()
+        data = pack(">I", self.__incr)
+        return empty_object.join([header, data])
+
+    @staticmethod
+    def parse_frame(header, payload):
+        """Parses the WINDOW_UPDATE frame.
+        Caller should assure that the payload size is equal to header.length.
+
+        :param header: a instance of :class: `HTTP2FrameHeader`.
+        :param payload: data stream.
+        :rtype: a instance of :class: `HTTP2WindowUpdateFrame`.
+        """
+        HTTP2FrameHeader.check_frame_type(header.type,
+                                          need=HTTP_V2_GOAWAY_FRAME)
+        if header.length != len(payload):
+            raise HTTP2FrameError("invalid payload length: %d" % len(payload))
+        elif header.length != 4:
+            raise  HTTP2FrameError("invalid header length: %d" % header.length)
+
+        incr = unpack(">I", payload)
+        return HTTP2WindowUpdateFrame(header, incr)
