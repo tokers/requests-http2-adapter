@@ -73,5 +73,26 @@ hpack_static_table = (
 )
 
 
-class HTTP2HpackTable:
-    pass
+class HTTP2Hpack:
+    """The HTTP/2 Hpack class
+
+    :param dynamic: initialized dynamic table
+    """
+    def __init__(self, dynamic):
+        self.__static = hpack_static_table
+        self.__dynamic = dynamic or []
+
+    def encode_indexed(self):
+        pass
+
+    def encode_incr_indexing(self):
+        pass
+
+    def encode_without_indexing(self):
+        pass
+
+    def encode_never_indexed(self):
+        pass
+
+    def encode(self, fmt=None):
+        pass

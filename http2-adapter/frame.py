@@ -247,26 +247,21 @@ class HTTP2HeadersFrame(object):
     |                   Padding (*)                                 ...
     +-----------------------------------------------------------------+
     
-    :param authority: the authority portion of the target URI.
-    :param path: the path and query parts of the target URI.
-    :param method: the HTTP method.
-    :param headers: a dict represents the request headers.
-    :param sid: the stream identifier where the frame belongs.
-    :param flags: the frame flags.
+    :param _header: a instance of :class: `HTTP2FrameHeader`.
+    :param _authority: the authority portion of the target URI.
+    :param _path: the path and query parts of the target URI.
+    :param _method: the HTTP method.
+    :param _headers: a dict represents the request headers.
     """
-    def __init__(self, authority, path, method, headers, sid, flags=0):
-        # the frame header
-        self.__header = None
-
+    def __init__(self, _header, _authority, _path, _method, _headers):
+        HTTP2FrameHeader.check_frame_type(_header.type, HTTP_V2_HEADERS_FRAME)
         self.header_block = dict((key.lower(), headers[key]) for key in headers)
-
-        # pseudo-headers
         self.header_block[":authority"] = authority
         self.header_block[":method"] = method
         self.header_block[":path"] = path
+        self.__header = _header
 
-    def serialize(self):
-        pass
+    def serialize(self, hpack):
 
 
 class HTTP2DataFrame(object):

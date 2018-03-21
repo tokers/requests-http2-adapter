@@ -17,3 +17,6 @@ class HTTP2Error(RequestException):
 class HTTP2FrameError(HTTP2Error):
     """An HTTP/2 frame error occurred."""
 
+
+class HTTP2HpackError(HTTP2Error):
+    """An hTTP/2 hpack error occurred."""
