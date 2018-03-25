@@ -20,3 +20,11 @@ class HTTP2FrameError(HTTP2Error):
 
 class HTTP2HpackError(HTTP2Error):
     """An hTTP/2 hpack error occurred."""
+
+
+class HTTP2HpackEncodeError(HTTP2HpackError):
+    """An hTTP/2 hpack decoding error occurred."""
+
+
+class HTTP2HpackDecodeError(HTTP2HpackError):
+    """An hTTP/2 hpack decoding error occurred."""

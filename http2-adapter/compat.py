@@ -18,3 +18,4 @@ is_py3 = (_ver[0] == 3)
 
 # for python/2.x, data type will be str, whereas for python/3.x, type is bytes
 empty_object = "" if is_py2 else b""
+range_iter = xrange if is_py2 else range
