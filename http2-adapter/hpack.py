@@ -9,6 +9,7 @@ from struct import pack, unpack
 from .compat import range_iter
 from .exceptions import HTTP2HpackEncodeError
 from .exceptions import HTTP2HpackDecodeError
+from .huffman import HTTP2Huffman
 
 
 # The Static Table Definition.
@@ -102,6 +103,7 @@ class HTTP2Hpack:
         self.__dynamic = dynamic or []
         self.__dynamic_table_size = 0
         self.__max_dynamic_table_size = max_dynamic_table_size
+        self.__huff = HTTP2Huffman()
 
         index = 0
         for item in self.__dynamic:
@@ -165,9 +167,20 @@ class HTTP2Hpack:
         if not isinstance(header, tuple):
             raise ValueError("unexpected type \"%s\" for header" % type(header))
 
-        return header in self.__dynamic
+        return header in self.__static or header in self.__dynamic
 
-    def encode_indexed(self, index):
+    def index_of_header(self, header):
+        if not self.inside_index_table(header):
+            raise HTTP2HpackEncodeError("header %s not in index table" % header)
+
+        index = 0
+        for table in [self.__static, self.__dynamic]:
+            index += 1
+            for item in table:
+                if header == item:
+                    return index
+
+    def encode_indexed(self, header):
         """Indexed header field representation
           0   1   2   3   4   5   6   7
         +---+---+---+---+---+---+---+---+
@@ -177,16 +190,15 @@ class HTTP2Hpack:
         :param index: index that caller want to use.
         :rtype: the encoded data stream.
         """
-        if index < 1:
-            raise HTTP2HpackEncodeError("invalid index")
-        elif index > len(self.__static) + len(self.__dynamic):
-            raise HTTP2HpackEncodeError("index out of dynamic table bound")
-
+        index = self.index_of_header(header)
         index |= 1 << 7
         return pack(">B", index)
 
-    def encode_incr_indexing(self):
-        pass
+    def encode_incr_indexing(self, header):
+        newitem = (header[0], "")
+        header_index = self.index_of_header(newitem)
+        if header_index & (1 << 7) != 0:
+            raise HTTP2HpackEncodeError("invalid index %d" % header_index)
 
     def encode_without_indexing(self):
         pass
