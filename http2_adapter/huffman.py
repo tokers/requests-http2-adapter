@@ -4,7 +4,7 @@
 http/2 huffman encode/decode tables
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Basically this module references the HTTP/2 implements by nginx.
+Basically this module references the HTTP/2 implements by Nginx.
 """
 
 from .compat import empty_unit
