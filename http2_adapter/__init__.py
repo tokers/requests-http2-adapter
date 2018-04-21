@@ -10,3 +10,7 @@ HTTP/2 Adapter for Requests HTTP Library
 """
 
 from .huffman import HTTP2Huffman
+
+__all__ = [
+    ["HTTP2Huffman"],
+]

@@ -14,6 +14,7 @@ from .exceptions import HTTP2HpackHuffmanDecodeError
 from .exceptions import HTTP2HpackHuffmanEncodeError
 from struct import pack
 from struct import unpack
+from ctypes import c_uint64 as uint64
 
 # (code, len)
 http2_huff_encode_table = (
@@ -2672,7 +2673,7 @@ class HTTP2Huffman:
         self.__encode_table = http2_huff_encode_table
         self.__encode_table_lc = http2_huff_encode_table_lc
         self.__decode_table = http2_huff_decode_table
-        size.__sizeof_buf = 64
+        self.__sizeof_buf = 64
         self.__decode_state = 0
         self.__decode_ending = False
 
@@ -2694,9 +2695,8 @@ class HTTP2Huffman:
             data.append(chr(code[2]))
 
         self.__decode_state = code[0]
-        self.__decode_encoding = code[3]
+        self.__decode_ending = code[3]
         return True
-
 
     def encode(self, payload, lower=False):
         """Encodes the payload (bytes for py3 and str for py2) with Huffman
@@ -2710,34 +2710,41 @@ class HTTP2Huffman:
             raise ValueError("unexpected type \"%s\"" % type(payload))
 
         table = self.__encode_table_lc if lower else self.__encode_table
-        pending, buf, size_buf = 0, 0, self.__sizeof_buf
+        pending, buf, size_buf = 0, uint64(0), self.__sizeof_buf
         encoded = list()
 
         for e in payload:
-            huff = ord(e) if is_py2 else e
+            huff = table[ord(e) if is_py2 else e]
             code = huff[0]
             pending += huff[1]
-            if pending <= size_buf:
-                buf |= code << (size_buf - pending)
+            if pending < size_buf:
+                buf.value |= code << (size_buf - pending)
                 continue
 
             # pending > size_buf
             pending -= size_buf
-            buf |= code >> pending
+            buf.value |= code >> pending
 
-            map(encoded.append, pack(">B"))
-            buf = (code << (size_buf - pending)) if pending > 0 else 0
+            map(encoded.append, pack(">Q", buf.value))
+            buf.value = code << (size_buf - pending) if pending > 0 else 0
 
         if pending == 0:
             return empty_unit.join(encoded)
 
-        buf |= (2 << 64 - 1) >> pending
+        buf.value |= uint64(-1).value >> pending
         if pending % 8 > 0:
             pending = (pending // 8 + 1) * 8
 
+        buf.value >>= size_buf - pending
+
+        rest = []
         while pending > 0:
+            map(rest.append, pack(">B", buf.value & 0xff))
+            buf.value >>= 8
             pending -= 8
-            map(encoded.append, pack(">B", buf >> pending & 0xff))
+
+        rest.reverse()
+        encoded += rest
 
         return empty_unit.join(encoded)
 
@@ -2749,9 +2756,10 @@ class HTTP2Huffman:
         """
         err_msg = "huffman decode error with state 0x%x and code 0x%x"
         self.__decode_ending = False
+        self.__decode_state = 0
         data = []
         for ch in payload:
-            ch = int(ch)
+            ch = ord(ch)
             if not self.__decode_4bits(data, ch >> 4 & 0xf):
                 msg = err_msg % (self.__decode_state, ch >> 4 & 0xf)
                 raise HTTP2HpackHuffmanDecodeError(msg)
